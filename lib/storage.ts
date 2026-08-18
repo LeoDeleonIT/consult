@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-export { isAllowedAudio } from "./audio-validation";
+export { isAllowedAudio, isAllowedAudioMimeType } from "./audio-validation";
 
 type R2ObjectBodyLike = {
   arrayBuffer: () => Promise<ArrayBuffer>;

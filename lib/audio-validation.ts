@@ -1,16 +1,21 @@
-export function isAllowedAudio(bytes: ArrayBuffer, mimeType: string): boolean {
+const allowedAudioTypes = new Set([
+  "audio/webm",
+  "video/webm",
+  "audio/wav",
+  "audio/x-wav",
+  "audio/mpeg",
+  "audio/mp3",
+  "audio/mp4",
+  "audio/x-m4a",
+]);
+
+export function isAllowedAudioMimeType(mimeType: string): boolean {
   const type = mimeType.toLowerCase().split(";")[0];
-  const allowed = new Set([
-    "audio/webm",
-    "video/webm",
-    "audio/wav",
-    "audio/x-wav",
-    "audio/mpeg",
-    "audio/mp3",
-    "audio/mp4",
-    "audio/x-m4a",
-  ]);
-  if (!allowed.has(type)) return false;
+  return allowedAudioTypes.has(type);
+}
+
+export function isAllowedAudio(bytes: ArrayBuffer, mimeType: string): boolean {
+  if (!isAllowedAudioMimeType(mimeType)) return false;
   const view = new Uint8Array(bytes.slice(0, 16));
   const ascii = String.fromCharCode(...view);
   const isWav = ascii.startsWith("RIFF") && ascii.slice(8, 12) === "WAVE";

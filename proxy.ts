@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readSessionToken, sessionCookie } from "@/lib/session-token";
+import { productionConfigurationErrors } from "@/lib/env";
 
 export async function proxy(request: NextRequest) {
+  if (productionConfigurationErrors().length) {
+    return NextResponse.json({ error: "The server refused to start with an unsafe production configuration." }, { status: 503 });
+  }
   const session = await readSessionToken(request.cookies.get(sessionCookie.name)?.value);
   const path = request.nextUrl.pathname;
   if (!session) {

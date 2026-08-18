@@ -14,13 +14,16 @@ export function TranscriptView({
   const staffLabel = staffSpeakerRoleLabel(staffSpeakerRole);
   return (
     <div>
-      {transcript.speakerMapping === "inferred_turn_order" && (
-        <p className="transcript-warning">Staff and patient turns are inferred from speaking order. Confirm them against the recording before approval.</p>
+      {transcript.speakerMapping === "unconfirmed" && (
+        <p className="transcript-warning">Voice labels are not identities. Listen to the recording and confirm which voice is staff and which is the patient before approval.</p>
+      )}
+      {transcript.speakerMapping === "unavailable" && (
+        <p className="transcript-warning">The provider did not return usable speaker labels. This draft cannot be submitted until the transcript is reviewed and corrected.</p>
       )}
       <div className="transcript">
         {transcript.segments.length ? transcript.segments.map((segment, index) => (
           <div className="transcript-row" key={`${segment.startSeconds}-${index}`}>
-            <span className={`speaker speaker-${segment.speaker}`}>{segment.speaker === "coordinator" ? staffLabel : segment.speaker === "patient" ? "Patient" : "Unknown"}</span>
+            <span className={`speaker speaker-${segment.speaker}`}>{segment.speaker === "coordinator" ? staffLabel : segment.speaker === "patient" ? "Patient" : segment.speakerLabel ?? "Unknown"}</span>
             <div>
               <small>{formatSeconds(segment.startSeconds)}</small>
               <p><HighlightedTerms text={segment.text} tags={highlightTags} /></p>

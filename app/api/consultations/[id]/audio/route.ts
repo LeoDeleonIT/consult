@@ -1,4 +1,5 @@
 import { canAccessConsultation } from "@/lib/authorization";
+import { awsJobIdFromStorageKey, getAwsAudioUrl } from "@/lib/aws-client";
 import { ensureDatabase, writeAudit } from "@/lib/d1";
 import { apiError } from "@/lib/http";
 import { getConsultation, getRecording } from "@/lib/records";
@@ -18,6 +19,22 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     if (consultation.status === "deleted") return new Response("Gone.", { status: 410 });
     const recording = await getRecording(id, db);
     if (!recording || recording.deleted_at) return new Response("Gone.", { status: 410 });
+    const awsJobId = awsJobIdFromStorageKey(recording.storage_key);
+    if (awsJobId) {
+      const signed = await getAwsAudioUrl({ actorId: session.id, role: session.role, consultationId: id }, awsJobId);
+      const source = await fetch(signed.url, { redirect: "error" });
+      if (!source.ok || !source.body) return new Response("Audio is temporarily unavailable.", { status: 502 });
+      await writeAudit({ actorId: session.id, consultationId: id, eventType: "audio.played" });
+      return new Response(source.body, {
+        headers: {
+          "Content-Type": recording.mime_type,
+          ...(source.headers.get("content-length") ? { "Content-Length": source.headers.get("content-length")! } : {}),
+          "Cache-Control": "private, no-store",
+          "Content-Disposition": "inline",
+          "X-Content-Type-Options": "nosniff",
+        },
+      });
+    }
     const object = await new R2AudioStorage().get(recording.storage_key);
     if (!object) return new Response("Not found.", { status: 404 });
     await writeAudit({ actorId: session.id, consultationId: id, eventType: "audio.played" });

@@ -1,11 +1,13 @@
 import { canAccessConsultation } from "@/lib/authorization";
+import { createAwsUpload } from "@/lib/aws-client";
+import { awsUploadIntentSchema } from "@/lib/aws-contract";
 import { ensureDatabase, writeAudit } from "@/lib/d1";
 import { appConfig } from "@/lib/env";
 import { apiError } from "@/lib/http";
 import { getConsultation } from "@/lib/records";
 import { requireSession, verifyCsrf } from "@/lib/session";
 import { assertTransition } from "@/lib/state-machine";
-import { isAllowedAudio, randomStorageKey, R2AudioStorage } from "@/lib/storage";
+import { isAllowedAudio, isAllowedAudioMimeType, randomStorageKey, R2AudioStorage } from "@/lib/storage";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }): Promise<Response> {
   try {
@@ -18,6 +20,47 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     if (!canAccessConsultation({ role: session.role, userId: session.id, coordinatorId: consultation.coordinator_id })) {
       return Response.json({ error: "Forbidden." }, { status: 403 });
     }
+    if (appConfig.aiProvider === "aws" || appConfig.audioStorageDriver === "aws") {
+      if (appConfig.aiProvider !== "aws" || appConfig.audioStorageDriver !== "aws") {
+        return Response.json({ error: "AWS processing and AWS audio storage must be enabled together." }, { status: 503 });
+      }
+      if (!["recording", "uploaded"].includes(consultation.status)) {
+        return Response.json({ error: "This consultation is not ready for an AWS upload." }, { status: 409 });
+      }
+      const input = awsUploadIntentSchema.parse(await request.json());
+      if (input.durationSeconds > appConfig.maxRecordingMinutes * 60 + 5) {
+        return Response.json({ error: "Recording duration exceeds the configured limit." }, { status: 400 });
+      }
+      if (input.byteSize > appConfig.maxUploadMb * 1024 * 1024) {
+        return Response.json({ error: `Recording exceeds the ${appConfig.maxUploadMb} MB upload limit.` }, { status: 413 });
+      }
+      if (!isAllowedAudioMimeType(input.mimeType)) {
+        return Response.json({ error: "The selected recording type is not supported." }, { status: 415 });
+      }
+      const upload = await createAwsUpload({
+        actorId: session.id,
+        role: session.role,
+        consultationId: id,
+      }, input);
+      const now = new Date().toISOString();
+      const deleteAfter = new Date(Date.now() + appConfig.audioRetentionDays * 86400000).toISOString();
+      await db.batch([
+        db.prepare(`
+          INSERT INTO recordings (id,consultation_id,storage_key,mime_type,byte_size,duration_seconds,status,delete_after,created_at,updated_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?)
+          ON CONFLICT(consultation_id) DO UPDATE SET storage_key=excluded.storage_key,mime_type=excluded.mime_type,byte_size=excluded.byte_size,duration_seconds=excluded.duration_seconds,status='awaiting_upload',delete_after=excluded.delete_after,deleted_at=NULL,updated_at=excluded.updated_at
+        `).bind(crypto.randomUUID(), id, `aws:${upload.jobId}`, input.mimeType, input.byteSize, Math.round(input.durationSeconds), "awaiting_upload", deleteAfter, now, now),
+        db.prepare(`UPDATE consultations SET status='uploaded', recording_ended_at=COALESCE(recording_ended_at,?), failure_message=NULL, updated_at=? WHERE id=?`).bind(now, now, id),
+      ]);
+      await writeAudit({
+        actorId: session.id,
+        consultationId: id,
+        eventType: "recording.aws_upload_authorized",
+        metadata: { byteSize: input.byteSize, mimeType: input.mimeType, durationSeconds: Math.round(input.durationSeconds) },
+      });
+      return Response.json({ driver: "aws", ...upload });
+    }
+
     assertTransition(consultation.status, "uploaded");
 
     const form = await request.formData();

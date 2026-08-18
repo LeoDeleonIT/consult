@@ -1,7 +1,7 @@
 import { canSubmitConsultation } from "@/lib/authorization";
 import { ensureDatabase, writeAudit } from "@/lib/d1";
 import { apiError } from "@/lib/http";
-import { getAnalysis, getConsultation } from "@/lib/records";
+import { getAnalysis, getConsultation, getTranscript, parseTranscript } from "@/lib/records";
 import { requireSession, verifyCsrf } from "@/lib/session";
 import { assertTransition } from "@/lib/state-machine";
 
@@ -18,6 +18,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     }
     assertTransition(consultation.status, "submitted");
     if (!(await getAnalysis(id, db))) return Response.json({ error: "Analysis not found." }, { status: 409 });
+    const transcript = parseTranscript(await getTranscript(id, db));
+    if (!transcript || transcript.speakerMapping !== "provided") {
+      return Response.json({ error: "Confirm which recorded voice is staff and which is the patient before submission." }, { status: 409 });
+    }
     const now = new Date().toISOString();
     await db.batch([
       db.prepare(`UPDATE consultations SET status='submitted', submitted_at=?, updated_at=? WHERE id=?`).bind(now, now, id),

@@ -110,7 +110,8 @@ export default function CoordinatorReviewPage() {
   const status = detail.consultation.status;
   const processing = ["uploaded", "processing"].includes(status);
   const fixtureResult = detail.transcriptProvider?.provider === "fixture";
-  const canApprove = !fixtureResult || providerStatus?.mode === "demo";
+  const speakersConfirmed = detail.transcript?.speakerMapping === "provided";
+  const canApprove = (!fixtureResult || providerStatus?.mode === "demo") && speakersConfirmed;
   return (
     <AppShell requiredRole="coordinator">
       <div className="page-heading split-heading">
@@ -163,8 +164,14 @@ export default function CoordinatorReviewPage() {
           <section className="panel media-panel">
             <div className="panel-heading"><div><p className="eyebrow">Source material</p><h2>Recording and transcript</h2></div></div>
             {detail.recording && <audio className="server-audio" controls preload="metadata" src={`/api/consultations/${id}/audio`} />}
+            {status === "review_required" && detail.transcript.speakerMapping !== "provided" && (
+              <SpeakerMappingPanel id={id} transcript={detail.transcript} staffSpeakerRole={detail.consultation.speaker_role} csrf={csrf} onConfirmed={load} />
+            )}
             <TranscriptView transcript={detail.transcript} staffSpeakerRole={detail.consultation.speaker_role} />
           </section>
+          {status === "review_required" && !speakersConfirmed && (
+            <aside className="notice" role="alert"><strong>Speaker confirmation required</strong><p>Submission stays locked until you identify the recorded staff and patient voices above.</p></aside>
+          )}
           {status === "review_required" && canApprove && (
             <div className="sticky-actions">
               <div>{saved ? <span className="saved-message">Draft saved</span> : <span className="muted">AI draft — coordinator approval required</span>}{error && <span className="form-error inline-error">{error}</span>}</div>
@@ -178,5 +185,66 @@ export default function CoordinatorReviewPage() {
         </>
       )}
     </AppShell>
+  );
+}
+
+function SpeakerMappingPanel({
+  id,
+  transcript,
+  staffSpeakerRole,
+  csrf,
+  onConfirmed,
+}: {
+  id: string;
+  transcript: NormalizedTranscript;
+  staffSpeakerRole: StaffSpeakerRole;
+  csrf: string;
+  onConfirmed: () => Promise<void>;
+}) {
+  const labels = [...new Set(transcript.segments.map((segment) => segment.speakerLabel).filter((value): value is string => Boolean(value)))];
+  const [staffLabel, setStaffLabel] = useState("");
+  const [patientLabel, setPatientLabel] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function confirm() {
+    setBusy(true);
+    setError("");
+    const response = await apiFetch(`/api/consultations/${id}/transcript`, {
+      method: "PATCH",
+      body: JSON.stringify({ staffSpeakerLabel: staffLabel, patientSpeakerLabel: patientLabel }),
+    }, csrf);
+    if (!response.ok) {
+      setError(await responseError(response));
+      setBusy(false);
+      return;
+    }
+    await onConfirmed();
+    setBusy(false);
+  }
+
+  return (
+    <div className="speaker-mapping-panel">
+      <div><strong>Confirm recorded voices</strong><p>Voice labels separate speakers but do not identify people. Use playback to make this selection.</p></div>
+      {labels.length >= 2 ? (
+        <div className="speaker-mapping-fields">
+          <label>{staffSpeakerRoleLabel(staffSpeakerRole)} voice
+            <select value={staffLabel} onChange={(event) => setStaffLabel(event.target.value)}>
+              <option value="">Choose voice</option>
+              {labels.map((label) => <option value={label} key={`staff-${label}`}>{label}</option>)}
+            </select>
+          </label>
+          <label>Patient voice
+            <select value={patientLabel} onChange={(event) => setPatientLabel(event.target.value)}>
+              <option value="">Choose voice</option>
+              {labels.map((label) => <option value={label} key={`patient-${label}`}>{label}</option>)}
+            </select>
+          </label>
+          <button className="button primary" onClick={confirm} disabled={busy || !staffLabel || !patientLabel || staffLabel === patientLabel}>{busy ? "Saving…" : "Confirm voices"}</button>
+        </div>
+      ) : <p className="form-error">Two usable voice labels were not returned. An authorized transcript correction is required before submission.</p>}
+      {labels.length > 2 && <p className="transcript-warning">Additional voice labels will remain unknown and must be checked during review.</p>}
+      {error && <p className="form-error">{error}</p>}
+    </div>
   );
 }

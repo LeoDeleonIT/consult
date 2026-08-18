@@ -1,0 +1,12 @@
+{
+  "app": "npx tsx bin/consult-aws.ts",
+  "context": {
+    "allowedOrigins": ["https://synthetic.invalid"],
+    "audioRetentionDays": 30,
+    "maxUploadMb": 25,
+    "bedrockModelId": "amazon.nova-lite-v1:0",
+    "transcribeLanguageCode": "en-US",
+    "transcribeMaxSpeakers": 2,
+    "logRetentionDays": 7
+  }
+}

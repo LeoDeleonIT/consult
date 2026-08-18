@@ -6,25 +6,27 @@ import type { SessionUser } from "./types";
 type SessionState = {
   user: SessionUser | null;
   csrf: string;
+  phiProductionApproved: boolean;
   loading: boolean;
 };
 
-let cached: { user: SessionUser; csrf: string } | null = null;
+let cached: { user: SessionUser; csrf: string; phiProductionApproved: boolean } | null = null;
 
 export function useSession(): SessionState & { refresh: () => Promise<void> } {
   const [state, setState] = useState<SessionState>({
     user: cached?.user ?? null,
     csrf: cached?.csrf ?? "",
+    phiProductionApproved: cached?.phiProductionApproved ?? false,
     loading: !cached,
   });
   const refresh = useCallback(async () => {
     const response = await fetch("/api/session", { cache: "no-store" });
     if (!response.ok) {
       cached = null;
-      setState({ user: null, csrf: "", loading: false });
+      setState({ user: null, csrf: "", phiProductionApproved: false, loading: false });
       return;
     }
-    const data = await response.json() as { user: SessionUser; csrf: string };
+    const data = await response.json() as { user: SessionUser; csrf: string; phiProductionApproved: boolean };
     cached = data;
     setState({ ...data, loading: false });
   }, []);

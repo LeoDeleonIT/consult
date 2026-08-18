@@ -170,13 +170,28 @@ export default function RecordPage() {
     if (!blob) return;
     setState("uploading");
     setError("");
-    const form = new FormData();
-    form.append("audio", new File([blob], `recording.${extensionFor(blob.type)}`, { type: blob.type }));
-    form.append("durationSeconds", String(Math.max(seconds, 1)));
+    const file = new File([blob], `recording.${extensionFor(blob.type)}`, { type: blob.type });
     let audioSaved = false;
     try {
-      const upload = await apiFetch(`/api/consultations/${id}/upload`, { method: "POST", body: form }, csrf);
-      if (!upload.ok) throw new Error(await responseError(upload));
+      if (providerStatus?.provider === "aws") {
+        const intentResponse = await apiFetch(`/api/consultations/${id}/upload`, {
+          method: "POST",
+          body: JSON.stringify({ mimeType: blob.type, byteSize: blob.size, durationSeconds: Math.max(seconds, 1) }),
+        }, csrf);
+        if (!intentResponse.ok) throw new Error(await responseError(intentResponse));
+        const intent = await intentResponse.json() as { upload: { url: string; fields: Record<string, string> } };
+        const awsForm = new FormData();
+        Object.entries(intent.upload.fields).forEach(([key, value]) => awsForm.append(key, value));
+        awsForm.append("file", file);
+        const directUpload = await fetch(intent.upload.url, { method: "POST", body: awsForm });
+        if (!directUpload.ok) throw new Error("The private AWS upload did not finish. The recording is still on this device; try again.");
+      } else {
+        const form = new FormData();
+        form.append("audio", file);
+        form.append("durationSeconds", String(Math.max(seconds, 1)));
+        const upload = await apiFetch(`/api/consultations/${id}/upload`, { method: "POST", body: form }, csrf);
+        if (!upload.ok) throw new Error(await responseError(upload));
+      }
       audioSaved = true;
       setState("starting");
       const process = await apiFetch(`/api/consultations/${id}/process`, { method: "POST" }, csrf);
@@ -267,7 +282,9 @@ export default function RecordPage() {
         <aside className="notice">
           <strong>Know where audio goes</strong>
           <p>{providerStatus?.mode === "live"
-            ? "Audio is stored privately, then sent by the server to the configured OpenAI project for transcription and summary generation."
+            ? providerStatus.provider === "aws"
+              ? "Audio uploads directly to a private KMS-encrypted AWS object, then Amazon Transcribe and Amazon Bedrock create a draft for human review."
+              : "Audio is stored privately, then sent by the server to the configured OpenAI project for transcription and summary generation."
             : providerStatus?.mode === "demo"
               ? "Audio stays in server-controlled storage. Demo mode does not inspect its contents."
               : "Recording is disabled until the live transcription service is configured."}</p>

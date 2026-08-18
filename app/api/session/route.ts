@@ -1,4 +1,5 @@
 import { getSession } from "@/lib/session";
+import { appConfig } from "@/lib/env";
 
 export async function GET(): Promise<Response> {
   const session = await getSession();
@@ -13,5 +14,6 @@ export async function GET(): Promise<Response> {
       locationName: session.locationName,
     },
     csrf: session.csrf,
+    phiProductionApproved: appConfig.phiProductionApproved,
   });
 }
