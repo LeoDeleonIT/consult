@@ -1,8 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { assertEvidenceBacked, assertEvidenceMatchesTranscript, consultationAnalysisSchema } from "../src/analysis-schema.js";
+import { applySafeAnalysisDefaults, assertEvidenceBacked, assertEvidenceMatchesTranscript, consultationAnalysisSchema } from "../src/analysis-schema.js";
 import { normalizeAwsTranscribe } from "../src/transcribe-normalizer.js";
 
 describe("AWS transcript and analysis boundaries", () => {
+  it("defaults absence-only Bedrock collections without inventing analysis", () => {
+    const input = {
+      recommendedTreatments: [],
+      pricing: { totalEstimate: null, patientEstimate: null, insuranceEstimate: null, otherAmounts: [], evidence: [], needsReview: true },
+      financing: { discussed: null, options: [], evidence: [] },
+      patientConcerns: [],
+      patientDecision: { status: "not_stated", evidence: [], needsReview: true },
+      nextSteps: [],
+      checklist: [],
+      shortSummary: "No supported details were extracted.",
+    };
+
+    const parsed = consultationAnalysisSchema.parse(applySafeAnalysisDefaults(input));
+    expect(parsed.objections).toEqual([]);
+    expect(parsed.warnings).toEqual([]);
+  });
+
   it("preserves punctuation, timestamps, and raw labels without guessing identities", () => {
     const transcript = normalizeAwsTranscribe({ results: {
       transcripts: [{ transcript: "Hello. Payment options?" }],

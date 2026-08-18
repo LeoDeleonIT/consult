@@ -31,7 +31,9 @@ describe("short-lived consultation-scoped bridge tokens", () => {
 
   it("rejects tampering, expiry, overly long lifetimes, and wrong audiences", () => {
     const token = sign();
-    expect(() => verifyBridgeToken(`${token.slice(0, -1)}x`, secret, now)).toThrow();
+    const [header, payload, signature] = token.split(".");
+    const tamperedSignature = `${signature[0] === "a" ? "b" : "a"}${signature.slice(1)}`;
+    expect(() => verifyBridgeToken(`${header}.${payload}.${tamperedSignature}`, secret, now)).toThrow();
     expect(() => verifyBridgeToken(sign({ exp: now }), secret, now)).toThrow(/expired/);
     expect(() => verifyBridgeToken(sign({ exp: now + 181 }), secret, now)).toThrow(/expired/);
     expect(() => verifyBridgeToken(sign({ aud: "another-service" }), secret, now)).toThrow();

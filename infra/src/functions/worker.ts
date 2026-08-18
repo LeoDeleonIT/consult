@@ -4,7 +4,7 @@ import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from 
 import { GetTranscriptionJobCommand, StartTranscriptionJobCommand, TranscribeClient } from "@aws-sdk/client-transcribe";
 import { DynamoDBDocumentClient, GetCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { z } from "zod";
-import { assertEvidenceBacked, assertEvidenceMatchesTranscript, consultationAnalysisSchema, safeWorkflowError } from "../analysis-schema.js";
+import { applySafeAnalysisDefaults, assertEvidenceBacked, assertEvidenceMatchesTranscript, consultationAnalysisSchema, safeWorkflowError } from "../analysis-schema.js";
 import { normalizeAwsTranscribe } from "../transcribe-normalizer.js";
 import { transcribeJobNameFor } from "../job-identifiers.js";
 
@@ -161,7 +161,7 @@ async function summarize(jobId: string) {
     }));
     throw safeWorkflowError("bedrock_invalid_output");
   }
-  const parsedAnalysis = consultationAnalysisSchema.safeParse(toolUse.input);
+  const parsedAnalysis = consultationAnalysisSchema.safeParse(applySafeAnalysisDefaults(toolUse.input));
   if (!parsedAnalysis.success) {
     console.error("bedrock_schema_validation_failed", JSON.stringify(parsedAnalysis.error.issues.map((issue) => ({
       code: issue.code,

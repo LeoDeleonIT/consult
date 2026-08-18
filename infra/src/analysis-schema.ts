@@ -22,6 +22,16 @@ export const consultationAnalysisSchema = z.object({
 
 export type ConsultationAnalysis = z.infer<typeof consultationAnalysisSchema>;
 
+export function applySafeAnalysisDefaults(input: unknown): unknown {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return input;
+  const value = input as Record<string, unknown>;
+  return {
+    ...value,
+    objections: value.objections ?? [],
+    warnings: value.warnings ?? [],
+  };
+}
+
 export function assertEvidenceBacked(analysis: ConsultationAnalysis): ConsultationAnalysis {
   const missing: string[] = [];
   analysis.recommendedTreatments.forEach((item, index) => { if (!item.evidence.length) missing.push(`recommendedTreatments[${index}]`); });

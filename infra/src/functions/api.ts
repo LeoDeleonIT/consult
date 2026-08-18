@@ -187,7 +187,13 @@ async function deleteJob(identity: AuthContext, jobId: string) {
     if (error instanceof Error && error.name === "ConditionalCheckFailedException") throw new ApiError(409, "job_not_terminal");
     throw error;
   }
-  const keys = [job.objectKey, job.transcriptRawKey, job.transcriptKey, job.analysisKey].filter((value): value is string => Boolean(value));
+  const keys = [
+    job.objectKey,
+    job.transcriptRawKey,
+    job.transcriptKey,
+    job.analysisKey,
+    `transcripts/${job.jobId}/.write_access_check_file.temp`,
+  ].filter((value): value is string => Boolean(value));
   if (keys.length) {
     await s3.send(new DeleteObjectsCommand({ Bucket: required("AUDIO_BUCKET_NAME"), Delete: { Quiet: true, Objects: keys.map((Key) => ({ Key })) } }));
   }
