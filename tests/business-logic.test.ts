@@ -11,7 +11,9 @@ import { sanitizeAuditMetadata } from "../lib/audit";
 import { detectConversationTags } from "../lib/conversation-tags";
 import { getOpenDentalPatient, normalizeOpenDentalPatient } from "../lib/open-dental";
 import { CENTRAL_MANAGER_ACCOUNTS, officeAccountEmail, PILOT_LOCATIONS, TRINITY_LOCATIONS } from "../lib/locations";
-import { fixtureAnalysis, normalizeOpenAITranscript, openAIProviderError } from "../lib/providers";
+import { fixtureAnalysis, normalizeOpenAITranscript, openAIProviderError, usesDurableAwsProcessing } from "../lib/providers";
+import { isSyntheticReference } from "../lib/synthetic-data";
+import { applySpeakerMapping } from "../lib/speaker-mapping";
 import { staffSpeakerRoleLabel } from "../lib/speaker-roles";
 import {
   assertTransition,
@@ -137,8 +139,25 @@ describe("AI output and audit safety", () => {
       ],
     });
     expect(transcript.durationSeconds).toBe(6.2);
-    expect(transcript.speakerMapping).toBe("inferred_turn_order");
-    expect(transcript.segments.map((segment) => segment.speaker)).toEqual(["coordinator", "patient", "coordinator"]);
+    expect(transcript.speakerMapping).toBe("unconfirmed");
+    expect(transcript.segments.map((segment) => segment.speaker)).toEqual(["unknown", "unknown", "unknown"]);
+    expect(transcript.segments.map((segment) => segment.speakerLabel)).toEqual(["A", "B", "A"]);
+    const confirmed = applySpeakerMapping(transcript, { staffSpeakerLabel: "A", patientSpeakerLabel: "B" });
+    expect(confirmed.speakerMapping).toBe("provided");
+    expect(confirmed.segments.map((segment) => segment.speaker)).toEqual(["coordinator", "patient", "coordinator"]);
+  });
+
+  it("routes AWS mode only to durable AWS processing and never to OpenAI", () => {
+    expect(usesDurableAwsProcessing("aws")).toBe(true);
+    expect(usesDurableAwsProcessing("openai")).toBe(false);
+    expect(usesDurableAwsProcessing("fixture")).toBe(false);
+  });
+
+  it("allows only explicitly synthetic references in the default pilot mode", () => {
+    expect(isSyntheticReference("TEST-1042")).toBe(true);
+    expect(isSyntheticReference("SYN-APPT-77")).toBe(true);
+    expect(isSyntheticReference("Ruben Lopez")).toBe(false);
+    expect(isSyntheticReference("OD-1234")).toBe(false);
   });
 
   it("retries temporary provider failures but not rejected credentials", () => {

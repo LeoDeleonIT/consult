@@ -2,7 +2,7 @@
 
 A working internal-pilot PWA for recording a consented treatment-plan conversation, creating a structured AI draft, coordinating review, and manager oversight. Live use requires an explicitly configured server-side transcription provider; the app will not silently substitute sample content.
 
-This build is not HIPAA compliant or production ready. Do not use real patient information until the items in [PILOT_READINESS.md](./PILOT_READINESS.md) are completed.
+This build is not represented as HIPAA compliant or production ready. It defaults to a synthetic-data-only mode that blocks Open Dental and requires `SYN-`, `TEST-`, or `DEMO-` references. Do not use real patient information until the items in [PILOT_READINESS.md](./PILOT_READINESS.md) are completed and the controlled `PHI_PRODUCTION_APPROVED` gate is approved.
 
 ## What works
 
@@ -14,6 +14,8 @@ This build is not HIPAA compliant or production ready. Do not use real patient i
 - Mobile browser microphone recording with start, pause, resume, stop, discard, elapsed time, wake lock, preview, and retry-safe upload
 - Private local R2-emulated audio storage with randomized object keys
 - Fixture and real OpenAI transcription/summary adapters
+- Optional durable AWS path: direct private S3 upload, SQS/Step Functions jobs, Amazon Transcribe Standard diarization, Amazon Bedrock structured analysis, polling, and manager deletion
+- Human-confirmed staff/patient voice mapping; provider speaker labels are never treated as identities
 - Strict structured-summary validation, evidence excerpts, coordinator editing, and approval
 - Manager list, filters, detail review, source playback, audit history, and manager-only deletion
 - PWA manifest, icons, offline shell, standalone mode, and iPhone/iPad installation instructions
@@ -25,13 +27,13 @@ This build is not HIPAA compliant or production ready. Do not use real patient i
 - npm 10 or newer
 - A current Safari, Chrome, or Edge browser
 
-Docker and a separate database are not required. Local development uses Cloudflare's D1 and R2 emulators inside the monolithic application process. A server-side OpenAI API key is required to transcribe real recordings.
+Docker and a separate database are not required. Local development uses Cloudflare's D1 and R2 emulators inside the monolithic application process. Live processing requires either a server-side OpenAI configuration or the separately deployed AWS pilot stack. Neither provider may be used with real patient information merely because credentials are present.
 
 ## Exact local setup
 
 ```bash
 cp .env.example .env.local
-# Add OPENAI_API_KEY to .env.local before recording.
+# Keep synthetic-only defaults. Add one approved provider's server-side configuration before recording.
 npm install
 npm run db:migrate
 npm run db:seed
@@ -40,7 +42,7 @@ npm run dev
 
 Open the exact local URL printed by the development server, normally [http://localhost:3000](http://localhost:3000).
 
-The app also initializes an empty local database and the two development users on first request, so a clean checkout remains recoverable if the explicit migration or seed command is skipped.
+When `ENABLE_DEVELOPMENT_SEED_USERS=true`, the app also initializes an empty local database and development users on first request. Production configuration rejects this setting.
 
 ## Development logins
 
@@ -85,13 +87,33 @@ TRANSCRIPTION_MODEL=gpt-4o-transcribe-diarize
 SUMMARY_MODEL=gpt-5.6-terra
 ```
 
-No API key is included in client code or browser responses. Audio is read from private storage and posted directly by the server to the [OpenAI file transcription endpoint](https://developers.openai.com/api/docs/guides/speech-to-text). The default transcription model returns timestamped speaker segments; speaker roles are inferred from turn order and explicitly require human confirmation. Summary extraction uses the Responses API and [strict Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs). Model identifiers remain environment variables.
+No API key is included in client code or browser responses. Audio is read from private storage and posted directly by the server to the [OpenAI file transcription endpoint](https://developers.openai.com/api/docs/guides/speech-to-text). The default transcription model returns timestamped speaker segments; all voices remain unknown until the coordinator explicitly maps staff and patient. Summary extraction uses the Responses API and [strict Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs). Model identifiers remain environment variables.
 
 Before enabling the real provider for patient information, Trinity must have an approved vendor agreement/BAA and legal, privacy, security, retention, and cloud-configuration approval. Merely setting an API key does not make the pilot compliant.
 
+## Durable AWS synthetic pilot
+
+AWS mode is implemented as new infrastructure under `infra/`; it does not reuse or modify the existing `consult-transcribe` Lambda. The browser requests a five-minute constrained upload from the authenticated app, uploads directly to private KMS-encrypted S3, and the app queues a durable job. Standard Amazon Transcribe produces timestamped raw speaker labels. Amazon Bedrock returns schema-constrained, evidence-backed draft data. A coordinator must map staff and patient labels and approve the draft before submission.
+
+```text
+AI_PROVIDER=aws
+AUDIO_STORAGE_DRIVER=aws
+AWS_REGION=us-east-1
+AWS_API_BASE_URL=<deployed API output>
+AWS_BEDROCK_MODEL_ID=amazon.nova-lite-v1:0
+AWS_TRANSCRIBE_MODE=standard
+AWS_TRANSCRIBE_LANGUAGE_CODE=en-US
+AWS_TRANSCRIBE_MAX_SPEAKERS=2
+AWS_ALLOWED_ORIGINS=https://consult.example.internal
+AWS_BRIDGE_TOKEN_SECRET=<server-only protected secret>
+PHI_PRODUCTION_APPROVED=false
+```
+
+No static AWS access key is needed by the browser or application. The server signs short-lived, consultation-scoped bridge tokens using a generated Secrets Manager value. Deployment is deliberately approval-gated. Read the [architecture and cost plan](./docs/AWS_INTEGRATION_PLAN.md), [deployment runbook](./docs/AWS_DEPLOYMENT.md), [security checklist](./docs/AWS_SECURITY_CHECKLIST.md), and [data flow](./docs/AWS_DATA_FLOW.md) before any AWS change.
+
 ## Open Dental connection
 
-Open Dental can launch the new-consultation page from a Custom Program Link and pass the selected patient's internal `PatNum`. Trinity Consult then performs a server-side Patients GET request and prefills a minimal patient card; the keys are never exposed to the browser.
+Open Dental can launch the new-consultation page from a Custom Program Link and pass the selected patient's internal `PatNum`. Trinity Consult then performs a server-side Patients GET request and prefills a minimal patient card; the keys are never exposed to the browser. This route returns `403` while `PHI_PRODUCTION_APPROVED=false`.
 
 The official API requires both a Developer API Key and an office-specific Customer API Key. The office must also enable the API key and keep eConnector running. Add the following server-only values:
 
@@ -121,6 +143,7 @@ For the web pilot, Safari must stay open and active during recording. Avoid call
 
 - Structured records use D1 (SQLite locally).
 - Audio uses a private R2 binding (local emulator in development).
+- AWS mode uses private customer-KMS-encrypted S3 for audio/artifacts and customer-KMS-encrypted DynamoDB for durable job state.
 - Audio endpoints require an authenticated, authorized session and are sent with `Cache-Control: private, no-store`.
 - Manager deletion removes the R2 object, transcript row, analysis row, and patient/appointment references; it retains only a minimal tombstone and audit event.
 - `AUDIO_RETENTION_DAYS` is stored as `delete_after`, but automatic deletion scheduling is a known follow-up item.
@@ -137,15 +160,18 @@ For the web pilot, Safari must stay open and active during recording. Avoid call
 | `npm run typecheck` | Check strict TypeScript |
 | `npm run lint` | Run ESLint |
 | `npm run build` | Produce the deployment build |
+| `npm --prefix infra test` | Run AWS authorization, transcript, analysis, and CDK template tests |
+| `npm --prefix infra run build` | Type-check the AWS CDK and Lambda code |
+| `npm run test:aws-integration` | Run the gated deployed-AWS synthetic smoke test (skipped unless explicitly enabled) |
 
 ## Known limitations
 
 - The browser assembles recording chunks into one Blob before upload; maximum duration and upload size are enforced.
 - iOS Safari must remain foregrounded. Incoming calls and OS interruptions can disrupt capture.
 - Upload retries retain the stopped Blob only while the page remains open.
-- Processing occurs synchronously in the authenticated request; there is no background job worker.
+- OpenAI/fixture processing still uses the application request execution context. AWS mode uses SQS, Standard Step Functions, Lambda, durable DynamoDB status, and authenticated polling.
 - Fixture processing is disabled by default. Tests opt in with `AI_PROVIDER=fixture` and `ALLOW_FIXTURE_PROCESSING=true`; the UI marks the output as fixed sample data.
 - The live provider requires a funded OpenAI project key with access to both configured models; billing, project limits, or revoked permissions can stop processing.
-- Automatic retention deletion, durable distributed rate limiting, resumable uploads, and native iOS interruption recovery are follow-up work.
+- AWS lifecycle/TTL retention is implemented; local R2 automatic retention scheduling, distributed app rate limiting, resumable multipart uploads, and native iOS interruption recovery remain follow-up work.
 
 See [docs/NATIVE_IOS_HANDOFF.md](./docs/NATIVE_IOS_HANDOFF.md) for the clean backend contract intended for a later native capture client.

@@ -5,6 +5,8 @@ import { TRACKED_CONVERSATION_TAGS } from "@/lib/conversation-tags";
 import { requireSession, verifyCsrf } from "@/lib/session";
 import type { ConsultationRow } from "@/lib/records";
 import { STAFF_SPEAKER_ROLES } from "@/lib/speaker-roles";
+import { appConfig } from "@/lib/env";
+import { isSyntheticReference, syntheticReferenceError } from "@/lib/synthetic-data";
 
 type ConsultationListRow = ConsultationRow & {
   tag_payment_plans: number;
@@ -123,6 +125,14 @@ export async function POST(request: Request): Promise<Response> {
     const session = await requireSession("coordinator");
     verifyCsrf(request, session);
     const input = createSchema.parse(await request.json());
+    if (!appConfig.phiProductionApproved) {
+      if (!isSyntheticReference(input.patientReference)) {
+        return Response.json({ error: syntheticReferenceError("patient") }, { status: 400 });
+      }
+      if (input.appointmentReference && !isSyntheticReference(input.appointmentReference)) {
+        return Response.json({ error: syntheticReferenceError("appointment") }, { status: 400 });
+      }
+    }
     const db = await ensureDatabase();
     const assignedOffice = await db.prepare(`
       SELECT u.location_id, l.name AS location_name

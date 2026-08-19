@@ -19,7 +19,7 @@ function NewConsultationForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const openDentalPatNum = searchParams.get("odPatNum")?.trim() ?? "";
-  const { user, csrf } = useSession();
+  const { user, csrf, phiProductionApproved } = useSession();
   const [patientReference, setPatientReference] = useState("");
   const [appointmentReference, setAppointmentReference] = useState("");
   const [speakerRole, setSpeakerRole] = useState<StaffSpeakerRole | "">("");
@@ -30,7 +30,7 @@ function NewConsultationForm() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!openDentalPatNum) return;
+    if (!openDentalPatNum || !phiProductionApproved) return;
     const controller = new AbortController();
     fetch(`/api/open-dental/patients/${encodeURIComponent(openDentalPatNum)}`, {
       cache: "no-store",
@@ -47,7 +47,7 @@ function NewConsultationForm() {
         setOpenDentalError(caught instanceof Error ? caught.message : "Open Dental patient could not be loaded.");
       });
     return () => controller.abort();
-  }, [openDentalPatNum]);
+  }, [openDentalPatNum, phiProductionApproved]);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -73,8 +73,8 @@ function NewConsultationForm() {
     router.push(`/coordinator/consultations/${data.id}/record`);
   }
 
-  const loadingOpenDental = Boolean(openDentalPatNum) && !openDentalPatient && !openDentalError;
-  const showManualPatientFields = !openDentalPatNum || Boolean(openDentalError);
+  const loadingOpenDental = phiProductionApproved && Boolean(openDentalPatNum) && !openDentalPatient && !openDentalError;
+  const showManualPatientFields = !phiProductionApproved || !openDentalPatNum || Boolean(openDentalError);
   return (
     <AppShell requiredRole="coordinator">
       <div className="narrow-page">
@@ -85,6 +85,12 @@ function NewConsultationForm() {
             ? "Open Dental supplied the patient context. Select who is leading the conversation and confirm consent."
             : "Use a chart number or internal reference. Do not enter a full patient profile."}</p>
         </div>
+
+        {!phiProductionApproved && (
+          <aside className="notice provider-notice provider-unavailable" role="alert">
+            <div><strong>Synthetic references only</strong><p>Open Dental lookup is disabled. Use a made-up reference beginning with SYN-, TEST-, or DEMO- and do not enter a real name, chart number, or appointment ID.</p></div>
+          </aside>
+        )}
 
         {loadingOpenDental && (
           <div className="open-dental-patient-card is-loading" role="status">
@@ -117,12 +123,12 @@ function NewConsultationForm() {
             <>
               <label>
                 Patient reference
-                <input autoFocus required maxLength={80} placeholder="Example: TEST-1042" value={patientReference} onChange={(event) => setPatientReference(event.target.value)} />
-                <small>Chart number or internal reference only</small>
+                <input autoFocus required maxLength={80} placeholder={phiProductionApproved ? "Example: chart reference" : "Example: TEST-1042"} value={patientReference} onChange={(event) => setPatientReference(event.target.value)} />
+                <small>{phiProductionApproved ? "Chart number or internal reference only" : "Must begin with SYN-, TEST-, or DEMO-"}</small>
               </label>
               <label>
                 Appointment reference <span className="optional">Optional</span>
-                <input maxLength={80} placeholder="Example: APPT-7781" value={appointmentReference} onChange={(event) => setAppointmentReference(event.target.value)} />
+                <input maxLength={80} placeholder={phiProductionApproved ? "Example: appointment reference" : "Example: TEST-APPT-7781"} value={appointmentReference} onChange={(event) => setAppointmentReference(event.target.value)} />
               </label>
             </>
           )}

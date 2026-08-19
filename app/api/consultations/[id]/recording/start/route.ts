@@ -3,7 +3,7 @@ import { ensureDatabase, writeAudit } from "@/lib/d1";
 import { apiError } from "@/lib/http";
 import { getConsultation } from "@/lib/records";
 import { requireSession, verifyCsrf } from "@/lib/session";
-import { assertTransition, canStartRecording } from "@/lib/state-machine";
+import { canStartRecording } from "@/lib/state-machine";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }): Promise<Response> {
   try {

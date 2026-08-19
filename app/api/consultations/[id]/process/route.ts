@@ -1,13 +1,15 @@
 import { DEFAULT_CHECKLIST } from "@/lib/checklist";
 import { ensureDatabase, writeAudit, type D1DatabaseLike } from "@/lib/d1";
 import { apiError, PublicApiError } from "@/lib/http";
-import { createProviders, type ProviderSet } from "@/lib/providers";
+import { createProviders, usesDurableAwsProcessing, type ProviderSet } from "@/lib/providers";
 import { getAnalysis, getConsultation, getRecording, getTranscript, parseTranscript, type RecordingRow } from "@/lib/records";
 import { requireSession, verifyCsrf } from "@/lib/session";
 import { assertTransition, processingDisposition } from "@/lib/state-machine";
 import { R2AudioStorage } from "@/lib/storage";
 import { CONSULTATION_SCHEMA_VERSION, consultationAnalysisSchema } from "@/lib/analysis-schema";
 import { canAccessConsultation } from "@/lib/authorization";
+import { awsJobIdFromStorageKey, queueAwsJob } from "@/lib/aws-client";
+import { appConfig } from "@/lib/env";
 import { getRequestExecutionContext } from "vinext/shims/request-context";
 import type { StaffSpeakerRole } from "@/lib/speaker-roles";
 
@@ -104,9 +106,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     if (!canAccessConsultation({ role: session.role, userId: session.id, coordinatorId: consultation.coordinator_id })) {
       return Response.json({ error: "Forbidden." }, { status: 403 });
     }
-    const providers = createProviders(new R2AudioStorage());
     const existing = await getAnalysis(id, db);
-    const replacingFixture = existing?.provider === "fixture" && providers.name === "openai";
+    const targetProvider = usesDurableAwsProcessing() ? "aws" : getProviderName();
+    const replacingFixture = existing?.provider === "fixture" && targetProvider !== "fixture";
     const disposition = processingDisposition(consultation.status, Boolean(existing) && !replacingFixture);
     if (disposition === "return_existing") {
       return Response.json({ status: consultation.status, idempotent: true });
@@ -129,8 +131,19 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       actorId: session.id,
       consultationId: id,
       eventType: replacingFixture ? "processing.fixture_replacement_started" : "processing.started",
-      metadata: { provider: providers.name },
+      metadata: { provider: targetProvider },
     });
+
+    if (targetProvider === "aws") {
+      const jobId = awsJobIdFromStorageKey(recording.storage_key);
+      if (!jobId) throw new PublicApiError("This consultation does not have an AWS upload job. Upload the recording again.", 409, false, "aws_job_missing");
+      await queueAwsJob({ actorId: session.id, role: session.role, consultationId: id }, jobId);
+      await db.prepare(`UPDATE recordings SET status='queued', updated_at=? WHERE consultation_id=?`).bind(now, id).run();
+      await writeAudit({ actorId: session.id, consultationId: id, eventType: "recording.aws_upload_verified", metadata: { provider: "aws" } });
+      return Response.json({ status: "processing", queued: true, durable: true }, { status: 202 });
+    }
+
+    const providers = createProviders(new R2AudioStorage());
 
     const job = runProcessingJob({
       actorId: session.id,
@@ -159,4 +172,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     }
     return apiError(error);
   }
+}
+
+function getProviderName(): "fixture" | "openai" {
+  if (appConfig.aiProvider === "fixture") return "fixture";
+  if (appConfig.aiProvider === "openai") return "openai";
+  throw new PublicApiError("The configured AI provider is not supported.", 503, false, "provider_invalid");
 }

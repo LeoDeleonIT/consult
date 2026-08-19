@@ -10,10 +10,11 @@
     "build": "node scripts/with-wrangler-log.mjs vinext build",
     "start": "node scripts/with-wrangler-log.mjs vinext start",
     "test": "vitest run",
+    "test:aws-integration": "npm --prefix infra test -- live-aws.test.ts",
     "test:e2e": "node scripts/run-e2e.mjs",
     "test:all": "npm run lint && npm run typecheck && npm run test && npm run build",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern infra/cdk.out",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node scripts/with-wrangler-log.mjs wrangler d1 execute site-creator-d1 --local --file=migrations/0000_initial.sql",
     "db:seed": "node scripts/with-wrangler-log.mjs wrangler d1 execute site-creator-d1 --local --file=migrations/0001_seed.sql"
@@ -21,35 +22,39 @@
   "dependencies": {
     "bcryptjs": "^3.0.3",
     "drizzle-orm": "0.45.2",
-    "next": "^16.2.12",
-    "react": "19.2.6",
-    "react-dom": "19.2.6",
+    "next": "16.3.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "1.37.1",
-    "@cloudflare/workers-types": "^4.20260702.1",
+    "@cloudflare/vite-plugin": "1.53.0",
+    "@cloudflare/workers-types": "5.20260818.1",
     "@playwright/test": "^1.62.0",
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
-    "@vitejs/plugin-react": "6.0.2",
-    "@vitejs/plugin-rsc": "0.5.26",
+    "@vitejs/plugin-react": "6.0.5",
+    "@vitejs/plugin-rsc": "0.5.34",
     "drizzle-kit": "0.31.10",
     "eslint": "9.39.4",
-    "eslint-config-next": "16.2.6",
-    "react-server-dom-webpack": "19.2.6",
+    "eslint-config-next": "16.3.1",
+    "react-server-dom-webpack": "19.2.8",
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3",
-    "vinext": "0.0.50",
-    "vite": "8.0.13",
+    "vinext": "1.0.0-beta.6",
+    "vite": "8.2.1",
     "vitest": "^4.1.10",
-    "wrangler": "4.92.0"
+    "wrangler": "4.124.0"
   },
   "overrides": {
+    "nanoid": "3.3.18",
+    "postcss": "8.5.23",
+    "@esbuild-kit/core-utils": {
+      "esbuild": "0.25.0"
+    },
     "next": {
-      "postcss": "8.5.18",
       "sharp": "0.35.0"
     }
   },

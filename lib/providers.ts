@@ -4,7 +4,7 @@ import {
   type ConsultationAnalysis,
 } from "./analysis-schema";
 import { DEFAULT_CHECKLIST } from "./checklist";
-import { appConfig } from "./env";
+import { appConfig, awsConfigurationErrors } from "./env";
 import { PublicApiError } from "./http";
 import type { AudioStorage } from "./storage";
 import { staffSpeakerRoleLabel, type StaffSpeakerRole } from "./speaker-roles";
@@ -12,7 +12,6 @@ import type {
   ChecklistItem,
   NormalizedTranscript,
   ProviderStatus,
-  TranscriptSegment,
 } from "./types";
 
 export interface TranscriptionProvider {
@@ -32,7 +31,7 @@ export interface SummaryProvider {
 }
 
 export type ProviderSet = {
-  name: "fixture" | "openai";
+  name: "fixture" | "openai" | "aws";
   transcriptionModel: string;
   summaryModel: string;
   transcription: TranscriptionProvider;
@@ -301,6 +300,19 @@ async function waitForRetry(milliseconds: number): Promise<void> {
 }
 
 export function getProviderStatus(): ProviderStatus {
+  if (appConfig.aiProvider === "aws") {
+    const errors = awsConfigurationErrors();
+    const ready = appConfig.audioStorageDriver === "aws" && errors.length === 0;
+    return {
+      provider: "aws",
+      mode: ready ? "live" : "unavailable",
+      ready,
+      transcriptionModel: ready ? "amazon-transcribe-standard" : null,
+      message: ready
+        ? "AWS private upload, Amazon Transcribe, and Amazon Bedrock processing are configured for the synthetic pilot."
+        : errors[0] ?? "AWS mode requires AUDIO_STORAGE_DRIVER=aws.",
+    };
+  }
   if (appConfig.aiProvider === "openai") {
     const ready = Boolean(process.env.OPENAI_API_KEY);
     return {
@@ -347,11 +359,6 @@ export function normalizeOpenAITranscript(payload: unknown): NormalizedTranscrip
     })).optional(),
   }).parse(payload);
   const rawSegments = parsed.segments ?? [];
-  const speakers = [...new Set(rawSegments.map((segment) => segment.speaker))];
-  const roleFor = new Map<string, TranscriptSegment["speaker"]>();
-  speakers.forEach((speaker, index) => {
-    roleFor.set(speaker, index === 0 ? "coordinator" : index === 1 ? "patient" : "unknown");
-  });
   return {
     text: parsed.text,
     language: parsed.language ?? parsed.languages?.[0]?.code ?? null,
@@ -359,10 +366,11 @@ export function normalizeOpenAITranscript(payload: unknown): NormalizedTranscrip
     segments: rawSegments.map((segment) => ({
       startSeconds: segment.start,
       endSeconds: segment.end,
-      speaker: roleFor.get(segment.speaker) ?? "unknown",
+      speaker: "unknown",
+      speakerLabel: segment.speaker,
       text: segment.text.trim(),
     })),
-    speakerMapping: rawSegments.length ? "inferred_turn_order" : "unavailable",
+    speakerMapping: rawSegments.length ? "unconfirmed" : "unavailable",
   };
 }
 
@@ -378,6 +386,9 @@ export function createProviders(storage: AudioStorage): ProviderSet {
       summary: new OpenAISummaryProvider(),
     };
   }
+  if (status.provider === "aws") {
+    throw new PublicApiError("AWS processing must be queued through the durable AWS job API.", 409, false, "aws_job_required");
+  }
   if (status.provider !== "fixture") {
     throw new PublicApiError(status.message, 503);
   }
@@ -388,4 +399,8 @@ export function createProviders(storage: AudioStorage): ProviderSet {
     transcription: new FixtureTranscriptionProvider(),
     summary: new FixtureSummaryProvider(),
   };
+}
+
+export function usesDurableAwsProcessing(provider = appConfig.aiProvider): boolean {
+  return provider === "aws";
 }

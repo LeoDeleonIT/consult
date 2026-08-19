@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import bcrypt from "bcryptjs";
 import { sanitizeAuditMetadata } from "./audit";
+import { appConfig, assertProductionConfiguration } from "./env";
 import { CENTRAL_MANAGER_ACCOUNTS, officeAccountEmail, PILOT_LOCATIONS } from "./locations";
 
 export type D1Result<T = Record<string, unknown>> = {
@@ -30,6 +31,7 @@ export function rawDb(): D1DatabaseLike {
 }
 
 export async function ensureDatabase(): Promise<D1DatabaseLike> {
+  assertProductionConfiguration();
   const db = rawDb();
   if (!ready) {
     ready = initialize(db).catch((error) => {
@@ -72,7 +74,7 @@ async function initialize(db: D1DatabaseLike): Promise<void> {
     db.prepare(`CREATE INDEX IF NOT EXISTS consultations_location_idx ON consultations(location_id)`),
   ]);
   await seedLocations(db);
-  await seedUsers(db);
+  if (appConfig.enableDevelopmentSeedUsers) await seedUsers(db);
   await db.prepare(`UPDATE consultations SET location_id = (SELECT location_id FROM users WHERE users.id = consultations.coordinator_id) WHERE location_id IS NULL`).run();
 }
 

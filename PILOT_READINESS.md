@@ -11,6 +11,11 @@
 - Consent-gated browser recording with pause/resume/stop/discard and preview
 - Private audio upload with size, duration, MIME, and file-signature checks
 - Server-side fixture and OpenAI provider adapters
+- New, isolated AWS CDK stack for private KMS S3, DynamoDB, SQS/DLQ, Standard Step Functions, API Gateway, Lambda authorizer/workers, Transcribe Standard, Bedrock, access logs, and alarms
+- Durable AWS upload/job/status/deletion application integration with short-lived consultation-scoped server tokens
+- Raw diarization labels remain unidentified until coordinator mapping; submission is blocked until staff/patient voices are explicitly confirmed
+- Default synthetic-data enforcement: visible banner, restricted reference prefixes, and blocked Open Dental access
+- AWS unit/template tests and clean local CDK synthesis; deployed-AWS smoke test is deliberately pending approval
 - Environment-selected transcription and summary models
 - Strict structured-summary schema and malformed-output rejection
 - Coordinator editing and approval
@@ -32,6 +37,7 @@
 - Independent application security testing and penetration testing
 - Incident-response and breach-notification procedure
 - Production identity lifecycle, strong passwords or SSO, account recovery, and offboarding
+- Open Dental production integration authorization and minimum-necessary patient-field review
 - Centralized production logs that avoid PHI and have approved retention
 - Mobile device management expectations for company iPhones and iPads
 - Validation with the exact supported iOS/iPadOS and browser versions
@@ -45,14 +51,14 @@ This application is an internal technical pilot. It is not represented as HIPAA 
 
 - Browser capture is less interruption-tolerant than native AVFoundation recording.
 - Audio upload is not resumable and is assembled in browser memory.
-- Processing is synchronous rather than a durable background job.
-- `delete_after` is recorded, but automatic retention enforcement is not scheduled.
+- OpenAI and fixture processing use the app request execution context; AWS mode has a durable queue/workflow.
+- Local R2 `delete_after` is recorded but not scheduled; AWS mode enforces S3 lifecycle and DynamoDB TTL.
 - Local rate limits are intentionally basic and are not a distributed production control.
 - Fixture AI proves the pipeline but does not measure transcription quality.
 - Continued live-provider operation depends on a funded project key, configured limits, model access, and approved vendor configuration.
 
 ## Highest-value next improvements
 
-1. Add a durable processing job table with retries, status polling, and crash recovery.
-2. Add resumable multipart audio uploads plus automatic retention deletion.
+1. Obtain deployment approval, deploy the isolated AWS stack, and pass the gated synthetic live smoke test.
+2. Add resumable multipart audio uploads and scheduled local-R2 retention deletion.
 3. Build the native SwiftUI/AVFoundation capture client described in `docs/NATIVE_IOS_HANDOFF.md`.

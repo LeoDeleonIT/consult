@@ -29,7 +29,7 @@ test("P0 fixture workflow: consent, upload, process, approve, manager review, de
   await expect(page).toHaveURL(/\/coordinator\/consultations\/new$/);
   const patientReference = `TEST-${Date.now().toString().slice(-7)}`;
   await page.getByLabel("Patient reference").fill(patientReference);
-  await page.getByLabel("Appointment reference Optional").fill("APPT-SYNTHETIC");
+  await page.getByLabel("Appointment reference Optional").fill("TEST-APPT-SYNTHETIC");
   await page.getByLabel("Who is speaking with the patient?").selectOption("treatment_coordinator");
   const continueButton = page.getByRole("button", { name: "Continue to recording" });
   await expect(continueButton).toBeDisabled();
@@ -151,7 +151,7 @@ test("central manager sees the access directory and an office account can sign i
   await page.getByRole("link", { name: "Offices" }).click();
   await expect(page).toHaveURL(/\/manager\/offices$/);
   await expect(page.getByRole("heading", { name: "Offices and manager access" })).toBeVisible();
-  await expect(page.getByText("17", { exact: true })).toBeVisible();
+  await expect(page.getByText("18", { exact: true })).toBeVisible();
   await expect(page.getByText("rlopez@trinitydentalcenters.com", { exact: true })).toBeVisible();
   await expect(page.getByText("zain@trinitydentalcenters.com", { exact: true })).toBeVisible();
   await expect(page.getByText("leo@odysseysolutions.co", { exact: true })).toBeVisible();
@@ -187,7 +187,7 @@ test("mobile recorder remains usable and explains denied microphone permission",
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/coordinator$/);
   await page.getByRole("link", { name: "New consultation" }).click();
-  await page.getByLabel("Patient reference").fill(`MOBILE-${Date.now().toString().slice(-7)}`);
+  await page.getByLabel("Patient reference").fill(`TEST-MOBILE-${Date.now().toString().slice(-7)}`);
   await page.getByLabel("Who is speaking with the patient?").selectOption("assistant");
   await page.getByLabel("The patient consented to this recording.").check();
   await page.getByRole("button", { name: "Continue to recording" }).click();
@@ -201,7 +201,7 @@ test("mobile recorder remains usable and explains denied microphone permission",
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 
   await startRecording.click();
-  await expect(page.getByRole("alert")).toContainText("Microphone access was denied");
+  await expect(page.getByRole("alert").filter({ hasText: "Microphone access was denied" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Start recording" })).toBeEnabled();
 
   const consultationId = page.url().split("/").at(-2);

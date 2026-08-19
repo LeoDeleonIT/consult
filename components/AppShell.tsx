@@ -54,6 +54,12 @@ export function AppShell({ children, requiredRole }: { children: ReactNode; requ
           <button className="nav-link button-link" onClick={signOut}>Sign out</button>
         </nav>
       </header>
+      {!session.phiProductionApproved && (
+        <aside className="synthetic-only-banner" role="alert">
+          <strong>Synthetic-data pilot only</strong>
+          <span>Do not enter, record, upload, or review real patient information.</span>
+        </aside>
+      )}
       <main className="page-shell">{children}</main>
     </div>
   );

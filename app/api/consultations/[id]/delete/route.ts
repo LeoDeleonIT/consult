@@ -1,4 +1,5 @@
 import { canDeleteConsultation } from "@/lib/authorization";
+import { awsJobIdFromStorageKey, deleteAwsJob } from "@/lib/aws-client";
 import { ensureDatabase, writeAudit } from "@/lib/d1";
 import { apiError } from "@/lib/http";
 import { getConsultation, getRecording } from "@/lib/records";
@@ -17,7 +18,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     if (!consultation) return Response.json({ error: "Consultation not found." }, { status: 404 });
     assertTransition(consultation.status, "deleted");
     const recording = await getRecording(id, db);
-    if (recording && !recording.deleted_at) await new R2AudioStorage().delete(recording.storage_key);
+    if (recording && !recording.deleted_at) {
+      const awsJobId = awsJobIdFromStorageKey(recording.storage_key);
+      if (awsJobId) {
+        await deleteAwsJob({ actorId: session.id, role: session.role, consultationId: id }, awsJobId);
+      } else {
+        await new R2AudioStorage().delete(recording.storage_key);
+      }
+    }
     const now = new Date().toISOString();
     await db.batch([
       db.prepare(`DELETE FROM transcripts WHERE consultation_id=?`).bind(id),
